@@ -76,7 +76,7 @@ func (c *Client) WriteObject(path string, method string, in interface{}, out int
 }
 
 func (c *Client) newRequest(method string, path string, data []byte) (*http.Request, error) {
-	url := fmt.Sprintf("https://%s.freshservice.com%s", c.domain, path)
+	url := fmt.Sprintf("https://%s.freshdesk.com%s", c.domain, path)
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(data))
 	if err != nil {
 		return nil, err
