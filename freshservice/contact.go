@@ -1,12 +1,13 @@
 package freshservice
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
 )
 
-//Ticket see here: https://api.freshservice.com/v2/#contact_attributes
+// See here: https://api.freshservice.com/v2/#contact_attributes
 type Contact struct {
 	Active         bool                   `json:"active,omitempty"`
 	Address        string                 `json:"address,omitempty"`
@@ -51,28 +52,20 @@ func formatValue(v interface{}) string {
 	}
 }
 
-// BuildQueryString takes an array of FreshdeskContactQuery into a maximally-
-// sized query string, returning that and also a slice of the remaining objects.
-func BuildQueryString(query []ContactFilter) (PreparedContactQuery, []ContactFilter) {
-	if len(query) < 1 {
-		return "", query
+// BuildQueryString returns a prepared query string that can be used to query
+// Freshdesk with. The second parameter indicates if preparation was successful.
+// If false, start again.
+func BuildQueryString(query PreparedContactQuery, contact ContactFilter) (PreparedContactQuery, bool) {
+	if len(query) == 0 {
+		return PreparedContactQuery(fmt.Sprintf("\"%s: %s\"", contact.Field, formatValue(contact.Value))), true
 	}
 
-	qs := fmt.Sprintf("%s: %s", query[0].Field, formatValue(query[0].Value))
-	numTaken := 1
-
-	for _, q := range query {
-		prepared := fmt.Sprintf(" OR %s: %s", q.Field, formatValue(q.Value))
-
-		if len(qs)+len(prepared) > CONTACT_FILTER_LIMIT-2 {
-			break
-		}
-
-		qs += prepared
-		numTaken += 1
+	prepared := fmt.Sprintf(" OR %s: %s", contact.Field, formatValue(contact.Value))
+	if len(query)+len(prepared) <= CONTACT_FILTER_LIMIT {
+		return PreparedContactQuery(string(query[:len(query)-1]) + prepared + "\""), true
 	}
 
-	return PreparedContactQuery(fmt.Sprintf("\"%s\"", qs)), query[numTaken:]
+	return query, false
 }
 
 // FilterContacts filters contacts by some specified field (OR conditions only)
@@ -104,5 +97,35 @@ func (c *Client) GetContacts() ([]Contact, error) {
 		return nil, err
 	}
 
+	return result, nil
+}
+
+func (c *Client) CreateContact(contact Contact) (*Contact, error) {
+	if contact.Name == "" {
+		return nil, errors.New("Name is a required field for new contacts")
+	}
+	if contact.Email == "" && contact.Phone == "" && contact.Mobile == "" && contact.TwitterId == "" && contact.ExternalId == "" {
+		return nil, errors.New("At least one of: (email, phone, mobile, twitterid, externalid) must be provided")
+	}
+
+	var result *Contact
+	err := c.WriteObject("/api/v2/contacts", "POST", contact, result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *Client) UpdateContact(contact Contact) (*Contact, error) {
+	if contact.Id == 0 {
+		return nil, errors.New("Need ID to update contact.")
+	}
+
+	var result *Contact
+	uri := fmt.Sprintf("/api/v2/contacts/%d", contact.Id)
+	err := c.WriteObject(uri, "PUT", contact, result)
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
